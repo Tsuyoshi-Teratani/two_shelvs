@@ -28,6 +28,12 @@ function findObjectId(start: THREE.Object3D): string | null {
   return null;
 }
 
+/** 自分と祖先がすべて表示中か（visible=falseの物はRaycasterにも当たるため、注視対象から除く） */
+function isVisibleInTree(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+
 /**
  * Canvas内（R3Fツリーの中）で呼び出すこと。
  * 毎フレーム、画面中央（視線方向）のレイキャストと、カメラの向きの履歴からの
@@ -64,7 +70,8 @@ export function useGazeGesture({
 
     raycaster.current.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hits = raycaster.current.intersectObjects(scene.children, true);
-    const hitId = hits.length > 0 ? findObjectId(hits[0].object) : null;
+    const first = hits.find((h) => isVisibleInTree(h.object));
+    const hitId = first ? findObjectId(first.object) : null;
 
     const now = performance.now();
 

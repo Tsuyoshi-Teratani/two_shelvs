@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { Box, Text } from '@react-three/drei';
 import { SHELF } from '../Size';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export interface ShelfProps {
   position: [number, number, number];
@@ -74,9 +75,13 @@ export default function Shelf({
       {/* 棚の名前プレート（黒板風） */}
       {name && (
         <group position={[0, height + 0.09, 0.03]}>
-          <Text position={[0, 0, 0.021]} fontSize={0.06} color="#ffffff" anchorX="center" anchorY="middle">
-            {name}
-          </Text>
+          <ErrorBoundary fallback={null}>
+            <Suspense fallback={null}>
+              <Text position={[0, 0, 0.021]} fontSize={0.06} color="#ffffff" anchorX="center" anchorY="middle">
+                {name}
+              </Text>
+            </Suspense>
+          </ErrorBoundary>
           <mesh position={[0, 0, 0]}>
             {/* args={[横幅, 縦幅, 厚み]} */}
             <boxGeometry args={[0.6, 0.18, 0.04]} />

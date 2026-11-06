@@ -59,14 +59,25 @@ export interface Vec3 {
   z: number;
 }
 
+/**
+ * 本を置く向き（本のみ。雑貨は常に標準の向き）。
+ * - standing-cover: 立てて、表紙を手前（開口部側）に向ける
+ * - standing-spine: 立てて、背表紙を手前に向ける
+ * - lying-cover:    寝かせて、表紙を上にする
+ * - lying-spine:    寝かせて、背表紙を手前に向ける
+ */
+export type BookOrientation = 'standing-cover' | 'standing-spine' | 'lying-cover' | 'lying-spine';
+
 export interface PlacementDoc {
   id: string;
   objectId: string;
   surface: Surface;
   /** 棚(left/right)のときは段番号(0=最下段)。壁(wall)のときは常に0で未使用 */
   compartmentIndex: number;
+  /** 本の向き。未設定なら standing-cover（従来どおり表紙を向けて立てる） */
+  orientation?: BookOrientation;
   /**
-   * 座標系はsurfaceによって異なる:
+   * 座標系はsurfaceによって異なる（positionは向きを反映した後の物の中心）:
    * - left/right: その棚のローカル原点（床・幅中央・奥行き中央）からの相対座標(m)
    * - wall: 部屋のワールド座標そのもの(m)
    */

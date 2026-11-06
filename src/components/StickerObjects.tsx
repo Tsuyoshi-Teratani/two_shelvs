@@ -1,5 +1,7 @@
 import { useTexture } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
+import { Suspense } from 'react';
+import ErrorBoundary from './ErrorBoundary';
 import type { StickerDoc, StickerPlacementDoc, Surface } from '../types';
 
 interface Props {
@@ -22,13 +24,16 @@ export default function StickerObjects({ placements, stickers, surface, onSelect
           const sticker = stickerMap.get(placement.stickerId);
           if (!sticker) return null;
           return (
-            <StickerPlane
-              key={placement.id}
-              sticker={sticker}
-              placement={placement}
-              rotationY={rotationY}
-              onSelect={onSelect}
-            />
+            <ErrorBoundary key={placement.id} fallback={null}>
+              <Suspense fallback={null}>
+                <StickerPlane
+                  sticker={sticker}
+                  placement={placement}
+                  rotationY={rotationY}
+                  onSelect={onSelect}
+                />
+              </Suspense>
+            </ErrorBoundary>
           );
         })}
     </group>

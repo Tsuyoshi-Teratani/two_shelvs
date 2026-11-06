@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Environment, OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import StoreRoom from './StoreRoom';
+import SafeEnvironment from './SafeEnvironment';
 import DropShelfFronts from './DropShelfFronts';
 import DropShelfBack from './DropShelfBack';
 import DropWall from './DropWall';
@@ -18,7 +19,16 @@ import {
   clampStickerToWall,
   clampStickerToShelfBack,
 } from '../utils/roomLayout';
-import type { PlacementDoc, StickerDoc, StickerPlacementDoc, StoreObjectDoc, Surface, Vec3 } from '../types';
+import { DEFAULT_ORIENTATION, orientedSize } from '../utils/orientation';
+import type {
+  BookOrientation,
+  PlacementDoc,
+  StickerDoc,
+  StickerPlacementDoc,
+  StoreObjectDoc,
+  Surface,
+  Vec3,
+} from '../types';
 
 export const OBJECT_DRAG_MIME = 'application/x-thoshelfsshop-object';
 export const STICKER_DRAG_MIME = 'application/x-thoshelfsshop-sticker';
@@ -26,11 +36,19 @@ export const STICKER_DRAG_MIME = 'application/x-thoshelfsshop-sticker';
 interface Props {
   /** 現在編集対象の面。この面の当たり判定だけが有効になり、カメラもこの面を正面から映す */
   activeSurface: Surface;
+  /** 次にドロップする本の向き（雑貨には影響しない） */
+  bookOrientation: BookOrientation;
   objects: StoreObjectDoc[];
   placements: PlacementDoc[];
   stickers: StickerDoc[];
   stickerPlacements: StickerPlacementDoc[];
-  onPlaceObject: (objectId: string, surface: Surface, compartmentIndex: number, position: Vec3) => void;
+  onPlaceObject: (
+    objectId: string,
+    surface: Surface,
+    compartmentIndex: number,
+    position: Vec3,
+    orientation: BookOrientation
+  ) => void;
   onRemoveObject: (objectId: string) => void;
   onPlaceSticker: (stickerId: string, surface: Surface, position: Vec3, widthM: number, heightM: number) => void;
   onRemoveSticker: (placementId: string) => void;
@@ -91,9 +109,10 @@ type DropKind = 'object' | 'sticker';
 function DropController({
   objects,
   stickers,
+  bookOrientation,
   onPlaceObject,
   onPlaceSticker,
-}: Pick<Props, 'objects' | 'stickers' | 'onPlaceObject' | 'onPlaceSticker'>) {
+}: Pick<Props, 'objects' | 'stickers' | 'bookOrientation' | 'onPlaceObject' | 'onPlaceSticker'>) {
   const { camera, gl, scene } = useThree();
   const raycaster = useRef(new THREE.Raycaster());
 
@@ -135,14 +154,22 @@ function DropController({
           surface: Surface;
           compartmentIndex: number;
         };
-        const sizeM = sizeCmToMeters(obj.sizeCm);
+        // 本は選択中の向き、雑貨は標準の向き。置ける範囲・接地・奥行きは「向きを反映した後の寸法」で計算する
+        const orientation = obj.kind === 'book' ? bookOrientation : DEFAULT_ORIENTATION;
+        const extents = orientedSize(sizeCmToMeters(obj.sizeCm), orientation);
 
         if (surface === 'wall') {
-          onPlaceObject(objectId, 'wall', 0, clampToWall(sizeM, hit.point.x, hit.point.y));
+          onPlaceObject(objectId, 'wall', 0, clampToWall(extents, hit.point.x, hit.point.y), orientation);
         } else {
           // 平面は棚(Shelf)の子なので、親の変換でワールド→棚ローカル座標へ戻す
           const local = hit.object.parent!.worldToLocal(hit.point.clone());
-          onPlaceObject(objectId, surface, compartmentIndex, clampToCompartment(layout, compartmentIndex, sizeM, local.x));
+          onPlaceObject(
+            objectId,
+            surface,
+            compartmentIndex,
+            clampToCompartment(layout, compartmentIndex, extents, local.x),
+            orientation
+          );
         }
         return;
       }
@@ -171,13 +198,14 @@ function DropController({
       canvasEl.removeEventListener('dragover', handleDragOver);
       canvasEl.removeEventListener('drop', handleDrop);
     };
-  }, [camera, gl, scene, objects, stickers, onPlaceObject, onPlaceSticker]);
+  }, [camera, gl, scene, objects, stickers, bookOrientation, onPlaceObject, onPlaceSticker]);
 
   return null;
 }
 
 export default function ShelfEditorScene({
   activeSurface,
+  bookOrientation,
   objects,
   placements,
   stickers,
@@ -220,8 +248,8 @@ export default function ShelfEditorScene({
       style={{ background: '#20242b' }}
     >
       <ambientLight intensity={0.3} />
+      <SafeEnvironment />
       <Suspense fallback={null}>
-        <Environment preset="apartment" />
         <StoreRoom leftShelfChildren={shelfContent('left')} rightShelfChildren={shelfContent('right')}>
           {/* 奥の壁（ワールド座標） */}
           <PlacedObjects
@@ -243,6 +271,7 @@ export default function ShelfEditorScene({
       <DropController
         objects={objects}
         stickers={stickers}
+        bookOrientation={bookOrientation}
         onPlaceObject={onPlaceObject}
         onPlaceSticker={onPlaceSticker}
       />

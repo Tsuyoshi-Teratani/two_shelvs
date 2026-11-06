@@ -44,12 +44,45 @@ src/utils/roomLayout.ts     左右の棚の配置変換・壁面のクランプ
 - 置き場所は3面: `wall`（奥の壁・ワールド座標）/ `left` / `right`（棚ローカル座標）。
 - 奥の壁に置く物・ステッカーは来店者側(-Z)を向くよう180度回して描画する。
 
+## 本の向き（棚管理）
+
+本は4通りの向きで置けます（`src/utils/orientation.ts`）。雑貨は向きを選べません。
+
+| 向き | 値 | 見え方 |
+| --- | --- | --- |
+| 立てる（表紙を向ける） | `standing-cover` | 既定。表紙が手前 |
+| 立てる（背表紙を向ける） | `standing-spine` | 背表紙が手前 |
+| 寝かせる（表紙が上） | `lying-cover` | 平置き。表紙が上 |
+| 寝かせる（背表紙が手前） | `lying-spine` | 平置きで背表紙が手前 |
+
+- 棚管理の左サイドバー「本を置く向き」で選んでから、本をドラッグ&ドロップします。
+- 配置済みの本の向きは、サイドバー下の「（面）に配置済み」一覧のプルダウンで後から変えられます。向きで占める寸法が変わるため、接地の高さ・奥行き・左右の範囲は自動で計算し直されます。
+- `position` は向きを反映した後の物の中心です。表示に使う回転は `orientation` から算出します（未設定のデータは `standing-cover` 扱い）。
+- 本の面の割り当て: 表紙=+z、裏表紙=-z、背表紙=+x（表紙から見て右側＝右綴じ）。
+- 店内で商品をクリックして手元に取ると、向きに関係なく表紙が手前に向きます（戻すと元の向きで棚に戻ります）。
+- 寝かせた本の重ね置き（平積み）や、物同士の衝突判定はありません。
+
+## 店内（/store/:shopId）の操作
+
+| 操作 | 動き |
+| --- | --- |
+| ドラッグ（左・右どちらでも） | 視点を回転（平行移動はできません） |
+| スクロール / ピンチ | 拡大縮小（距離 0.1〜1.2m） |
+| 商品をクリック / タップ | 商品が棚から外れて手元（視点の正面）に拡大表示される。視点操作は止まり、ドラッグで商品を回転できる |
+| 「← 棚に戻す」ボタン / Escキー | 商品が棚の元の位置へ戻り、視点操作が再開する |
+| VR: 商品を見つめて縦に素早く1往復 / 横に素早く1往復 | 手元に取る / 棚に戻す（クリックの代わり） |
+
+- 視点を動かすドラッグはクリックとして扱いません（動かした距離が約5px以内のときだけクリック）。
+- 手元の位置は取り出した瞬間の視点に固定されます。VRで頭を動かしても商品は動かないので、周りから眺められます。
+- VRのヘッドセット内ではドラッグ回転・戻るボタンは使えません（戻すのは視線ジェスチャー）。
+- 実装: `components/HeldObject.tsx`（手元表示・回転・アニメーション）、`components/PlacedObjects.tsx`（クリック判定・棚側の非表示）、`components/VRStore.tsx`（状態管理・ボタン）。
+
 ## データモデル（Firestore）
 
 ```
 shops/{shopId}                           name, description, isPublic, doorImageUrl?, ownerUid, createdAt
 shops/{shopId}/objects/{id}              name, kind('gltf'|'book'), color, sizeCm, gltfUrl? | bookTextures?
-shops/{shopId}/placements/{id}           objectId, surface, compartmentIndex, position{x,y,z}
+shops/{shopId}/placements/{id}           objectId, surface, compartmentIndex, orientation?, position{x,y,z}
 shops/{shopId}/stickers/{id}             name, imageUrl, isFreehand
 shops/{shopId}/stickerPlacements/{id}    stickerId, surface, position, widthM, heightM
 ```
@@ -71,6 +104,28 @@ npm run seed:clean -- --key C:\path\to\serviceAccount.json   # テストデー�
 - 1店舗あたり: 本6冊（表紙・背表紙・裏表紙つき）、雑貨2点（GLB）、壁と左右の棚への配置（約7割。残りは未配置）、ステッカー3種と貼り付け4件。3店舗に1店舗は扉画像つき（残りはデフォルトの扉）。
 - 配置座標はアプリ本体の `src/utils` の計算関数で求めているため、実際の部屋にそのまま収まります。
 - 何度実行しても同じIDを上書きするだけです。実データ（uidが `seed-shop-` で始まらないもの）には触りません。
+
+## トラブルシュート: 「読み込み中…」のまま進まない
+
+ブラウザで F12 → Console を開き、赤いエラーを確認してください（画面にも原因が出ます）。
+
+| 症状・エラー | 原因と対処 |
+| --- | --- |
+| `permission-denied` | Firestoreのルール未設定。`firestore.rules` をコンソールの「Firestore Database → ルール」に貼って「公開」 |
+| `client is offline` / `unavailable` | Firestore Databaseが未作成、`.env` のprojectId/apiKeyの誤り、広告ブロッカーやVPN・社内ネットワークによる遮断 |
+| `Firebaseが未設定` と表示される | `.env` が無い/値が空。`.env` を編集したら `npm run dev` を再起動（Viteは起動時にしか読まない） |
+| 管理画面だけ「読み込み中…」 | Authentication でメール/パスワードを有効化、`.env` の `VITE_FIREBASE_API_KEY` / `AUTH_DOMAIN` を確認 |
+
+## トラブルシュート: 店内（/store/...）が真っ白になる・商品が箱のまま
+
+3Dの素材（本のテクスチャ・GLB・環境マップ）の読み込みが失敗すると起きます。現在は失敗しても部屋は表示され、商品は単色の箱で代用されます。F12 → Console の赤いエラーで原因を確認してください。
+
+- `blocked by CORS policy`（firebasestorage.googleapis.com）: StorageバケットにCORS設定が必要です。Google Cloud Console右上の「Cloud Shell」を開いて次を実行します（`<バケット名>` は `.env` の `VITE_FIREBASE_STORAGE_BUCKET`）。
+  ```
+  echo '[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]' > cors.json
+  gsutil cors set cors.json gs://<バケット名>
+  ```
+- 環境マップ（外部CDN）の取得失敗: 自動で半球ライトに切り替わります。見た目が少し変わるだけで動作には影響しません。
 
 ## 注意点・仮定
 

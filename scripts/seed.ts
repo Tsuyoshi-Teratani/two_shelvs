@@ -19,7 +19,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getShelfLayout, clampToCompartment, sizeCmToMeters } from '../src/utils/shelfLayout';
 import { clampToWall, clampStickerToWall, clampStickerToShelfBack } from '../src/utils/roomLayout';
+import { BOOK_ORIENTATIONS, DEFAULT_ORIENTATION, orientedSize } from '../src/utils/orientation';
 import type {
+  BookOrientation,
   PlacementDoc,
   ShopDoc,
   StickerDoc,
@@ -520,11 +522,19 @@ async function seedShop(sink: Sink, index: number) {
   const wallItem = toPlace.find((o) => o.kind === 'book');
   if (wallItem) {
     const pos = clampToWall(sizeCmToMeters(wallItem.sizeCm), (index % 2 === 0 ? -1 : 1) * 0.6, 1.4);
-    placements.push({ id: `placement-${wallItem.id}`, objectId: wallItem.id, surface: 'wall', compartmentIndex: 0, position: pos });
+    placements.push({
+      id: `placement-${wallItem.id}`,
+      objectId: wallItem.id,
+      surface: 'wall',
+      compartmentIndex: 0,
+      orientation: DEFAULT_ORIENTATION,
+      position: pos,
+    });
   }
 
   const queue = toPlace.filter((o) => o !== wallItem);
   const maxPerCompartment = index % 2 === 0 ? 1 : 2; // 店舗ごとに「1区画1点」と「1区画2点」を混ぜる
+  let bookCount = 0; // 本の向きを4種類ばらけさせるためのカウンタ
   for (const [surface, ci] of SLOT_ORDER) {
     if (queue.length === 0) break;
     const c = LAYOUT.compartments[ci];
@@ -532,10 +542,21 @@ async function seedShop(sink: Sink, index: number) {
     let placed = 0;
     while (queue.length > 0 && placed < maxPerCompartment) {
       const o = queue[0];
-      const sz = sizeCmToMeters(o.sizeCm);
+      // 本は向きを変えて置く（立てる/寝かせる × 表紙/背表紙）。雑貨は標準の向き
+      const orientation: BookOrientation =
+        o.kind === 'book' ? BOOK_ORIENTATIONS[(index + bookCount) % BOOK_ORIENTATIONS.length] : DEFAULT_ORIENTATION;
+      const sz = orientedSize(sizeCmToMeters(o.sizeCm), orientation); // 向きを反映した後の寸法
       if (cursor + sz.w > c.xMax - 0.005) break;
+      if (o.kind === 'book') bookCount++;
       const pos = clampToCompartment(LAYOUT, ci, sz, cursor + sz.w / 2);
-      placements.push({ id: `placement-${o.id}`, objectId: o.id, surface, compartmentIndex: ci, position: pos });
+      placements.push({
+        id: `placement-${o.id}`,
+        objectId: o.id,
+        surface,
+        compartmentIndex: ci,
+        orientation,
+        position: pos,
+      });
       cursor += sz.w + 0.01;
       placed++;
       queue.shift();
